@@ -72,4 +72,5 @@ Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor feat
 - Uses SPIFFS to store `wifi.txt` and `eat.txt`.  
 - Bloom filter used for efficient duplicate checking of WiFi networks.  
 - Kirby feeding is automatically based on 3-hour intervals from birthday time.  
-- Supports web-based toggles and scheduler settings.  
+- Supports web-based toggles and scheduler settings.
+- If you want to use the maximum 4 Mb partition for your ESP, copy board.txt under /packages/esp32/hardware/esp32/version/ folder, and the no_ota_bigger.csv file under /packages/esp32/hardware/esp32/version/tools/partitions/ folder
