@@ -1168,7 +1168,7 @@ deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
 
   // OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED nem indult!");
+    Serial.println("Can't start OLED!");
     for (;;)
       ;
   }
@@ -1190,13 +1190,13 @@ deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
   // DS3231 init
 
   if (!rtc.begin()) {
-    Serial.println("Nem található a DS3231!");
+    Serial.println("Cannot find DS3231!");
     for (;;)
       ;
   }
 
   if (rtc.lostPower()) {
-    Serial.println("RTC elvesztette az időt, beállítás most...");
+    Serial.println("RTC lost time, configuring it...");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // beállítja az aktuális build időt
   }
 
