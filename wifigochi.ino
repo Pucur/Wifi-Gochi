@@ -36,7 +36,7 @@ Version: 1.0
 #define MAX_RAM_SSIDS 50
 #define BLOOM_SIZE 8192
 
-String topQueue[MAX_TOP_MESSAGES];
+char topQueue[MAX_TOP_MESSAGES][64];
 unsigned long msgTimestamps[MAX_TOP_MESSAGES];
 int msgCount = 0;
 
@@ -97,22 +97,16 @@ unsigned long lastCalcUnix = 0;
 int lastActiveWifiCount = 0;
 
 // 24 hr to 12 hr
-String nowStr12Dot() {
+void nowStr12Dot(char* out, size_t sz) {
   DateTime now = rtc.now();
-  char buf[28];
-
   int hour12 = now.hour() % 12;
   if (hour12 == 0) hour12 = 12;
+  const char* dot = (now.hour() >= 12) ? "*" : "";
 
-  bool isPM = now.hour() >= 12;
-  const char* dot = isPM ? "*" : "";  // PM jel
-
-  sprintf(buf, "%02d.%02d.%02d. %02d:%02d:%02d %s",
-          now.year() % 100, now.month(), now.day(),
-          hour12, now.minute(), now.second(),
-          dot);
-
-  return String(buf);
+  snprintf(out, sz, "%02d.%02d.%02d. %02d:%02d:%02d %s",
+           now.year() % 100, now.month(), now.day(),
+           hour12, now.minute(), now.second(),
+           dot);
 }
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -676,12 +670,10 @@ void updateLedFade() {
   if (now - lastFadeUpdate >= fadeInterval) {
     lastFadeUpdate = now;
 
-    // Hue növelése
-    hue += 1;  // 1 lépés minden update-nél
+    hue += 1;
     if (hue >= 360) hue = 0;
 
-    // HSV -> RGB konverzió
-    hsvToRgb(hue, 1.0, 0.2, red, green, blue);  // 0.2 = fényerő (20%)
+    hsvToRgb(hue, 1.0, 0.2, red, green, blue);
 
     strip.setPixelColor(0, strip.Color(red, green, blue));
     strip.show();
@@ -842,10 +834,18 @@ void appendSSIDToFile_c(const char* ssid) {
 void onScanDone_c(int n) {
   if (n <= 0) return;
   char ssidBuf[33];
-
+  int processed = 0;
   for (int i = 0; i < n; i++) {
-    String tmp = WiFi.SSID(i);
-    tmp.toCharArray(ssidBuf, sizeof(ssidBuf));
+    if (processed >= 20) break;
+
+WiFi.SSID(i).toCharArray(ssidBuf, sizeof(ssidBuf));
+trim(ssidBuf);
+if (strlen(ssidBuf) == 0) continue;
+
+if (bloomCheck_c(ssidBuf)) {
+    ramAdd(ssidBuf);
+    continue;
+}
     trim(ssidBuf);
     if (strlen(ssidBuf) == 0) continue;
 
@@ -914,6 +914,7 @@ void onScanDone_c(int n) {
     notifyNewWifi(ssidBuf);
     fridge++;
     total++;
+    processed++;
     playMarioCoin();
   }
 
@@ -924,7 +925,7 @@ void onScanDone_c(int n) {
 // BUZZER SONG
 
 void playMarioCoin() {
-  if (isMuted) return;  // <-- HA NÉMÍTVA VAN, KIUGRIK
+  if (isMuted) return;
 
   tone(BUZZER_PIN, 1046, 100);
   delay(120);
@@ -960,48 +961,54 @@ void feedKirby() {
   File f = SPIFFS.open(WIFI_FILE, "r");
   if (!f) return;
 
-  String firstLine;
+  char firstLine[128] = {0};
   bool hasLine = false;
 
+  // --- Read first valid line ---
   while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) continue;
-    firstLine = line;
+    int l = f.readBytesUntil('\n', firstLine, sizeof(firstLine) - 1);
+    firstLine[l] = 0;
+    trim(firstLine);
+    if (strlen(firstLine) == 0) continue;
     hasLine = true;
     break;
   }
   f.close();
   if (!hasLine) return;
 
-  // What kirby eats, put from wifi.txt to eat.txt
+  // --- Append to eat.txt ---
   File e = SPIFFS.open(EAT_FILE, "a");
   if (e) {
-    int lastPos = firstLine.indexOf("last:");
-
     e.println(firstLine);
     e.close();
-    Serial.printf("Kirby megette: %s\n", firstLine.c_str());
+    Serial.printf("Kirby megette: %s\n", firstLine);
     fridge--;
   }
 
-  // remove eaten wifi from wifi.txt
-  File fOrig = SPIFFS.open(WIFI_FILE, "r");
-  File fNew = SPIFFS.open("/tmp.txt", "w");
-  if (fOrig && fNew) {
-    bool skipFirst = false;
-    while (fOrig.available()) {
-      String line = fOrig.readStringUntil('\n');
-      line.trim();
-      if (line.length() == 0) continue;
-      if (!skipFirst && line == firstLine) {
-        skipFirst = true;
+  // --- Rewrite wifi.txt without the eaten line ---
+  File in  = SPIFFS.open(WIFI_FILE, "r");
+  File out = SPIFFS.open("/tmp.txt", "w");
+
+  if (in && out) {
+    bool skipped = false;
+    char line[128];
+
+    while (in.available()) {
+      int l = in.readBytesUntil('\n', line, sizeof(line) - 1);
+      line[l] = 0;
+      trim(line);
+      if (strlen(line) == 0) continue;
+
+      if (!skipped && strcmp(line, firstLine) == 0) {
+        skipped = true;   // skip only first occurrence
         continue;
       }
-      fNew.println(line);
+
+      out.println(line);
     }
-    fOrig.close();
-    fNew.close();
+
+    in.close();
+    out.close();
 
     SPIFFS.remove(WIFI_FILE);
     SPIFFS.rename("/tmp.txt", WIFI_FILE);
@@ -1011,42 +1018,54 @@ void feedKirby() {
 // Counting how many SSIDs in the list
 int countLines(const char* path) {
   if (!SPIFFS.exists(path)) return 0;
+
   File f = SPIFFS.open(path, "r");
   if (!f) return 0;
+
   int count = 0;
+  char line[128];
+
   while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.length() > 0) count++;
+    int l = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[l] = 0;
+    trim(line);
+
+    if (strlen(line) == 0) continue;
+    count++;
   }
+
   f.close();
   return count;
 }
 
 // Notifications
 
-void pushTopMessage(String msg) {
+void pushTopMessage(const char* msg) {
   if (msgCount < MAX_TOP_MESSAGES) {
-    topQueue[msgCount] = msg;
+    strncpy(topQueue[msgCount], msg, 63);
+    topQueue[msgCount][63] = 0;
     msgTimestamps[msgCount] = millis();
     msgCount++;
   } else {
-    // FIFO: shift
     for (int i = 1; i < MAX_TOP_MESSAGES; i++) {
-      topQueue[i - 1] = topQueue[i];
+      strcpy(topQueue[i - 1], topQueue[i]);
       msgTimestamps[i - 1] = msgTimestamps[i];
     }
-    topQueue[MAX_TOP_MESSAGES - 1] = msg;
+    strncpy(topQueue[MAX_TOP_MESSAGES - 1], msg, 63);
     msgTimestamps[MAX_TOP_MESSAGES - 1] = millis();
   }
 }
 
 void notifyNewWifi(const char* ssid) {
-  pushTopMessage("NeW: " + String(ssid));
+  char buf[64];
+  snprintf(buf, sizeof(buf), "New: %s", ssid);
+  pushTopMessage(buf);
 }
 
 void notifyKirbyAte(const char* ssid) {
-  pushTopMessage("Kirby ate: " + String(ssid));
+  char buf[64];
+  snprintf(buf, sizeof(buf), "Kirby ate: ", ssid);
+  pushTopMessage(buf);
 }
 
 // Logo 
@@ -1062,11 +1081,11 @@ String getLogoBase64() {
 
 void toggleSleepMode() {
   if (isSleeping) {
-    display.ssd1306_command(SSD1306_DISPLAYON);  // kijelző vissza
+    display.ssd1306_command(SSD1306_DISPLAYON);
     isSleeping = false;
     Serial.println("Wake up! Display ON");
   } else {
-    display.ssd1306_command(SSD1306_DISPLAYOFF);  // kijelző ki
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
     isSleeping = true;
     Serial.println("Sleep mode ON");
   }
@@ -1122,7 +1141,7 @@ void checkSchedulers() {
 
     // Deep sleep time calculate
         int hoursToWake = deepSleepTo - deepSleepFrom;
-        if (hoursToWake <= 0) hoursToWake += 24;  // éjfél átlépés
+        if (hoursToWake <= 0) hoursToWake += 24;
         uint64_t sleep_us = (uint64_t)hoursToWake * 3600ULL * 1000000ULL;
 
         Serial.printf("Entering scheduled Deep Sleep for %d hours...\n", hoursToWake);
@@ -1132,7 +1151,7 @@ void checkSchedulers() {
 }
 
 // Make texts to bold
-void printBold(Adafruit_SSD1306& disp, int x, int y, const String& text) {
+void printBold(Adafruit_SSD1306& disp, int x, int y, const char* text) {
   disp.setCursor(x, y);
   disp.print(text);
   disp.setCursor(x + 1, y);
@@ -1156,8 +1175,8 @@ scanOffTo   = prefs.getInt("sa_to", 0);
 isLedOn     = prefs.getBool("led", true);
 ledOffFrom  = prefs.getInt("led_from", 0);
 ledOffTo    = prefs.getInt("led_to", 0);
-deepSleepFrom = prefs.getInt("ds_from", 0); // <- Deep Sleep kezdő
-deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
+deepSleepFrom = prefs.getInt("ds_from", 0);
+deepSleepTo   = prefs.getInt("ds_to", 0);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Serial.begin(115200);
@@ -1182,9 +1201,9 @@ deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
   display.println("LOADING...");
   display.setTextSize(1);
-  display.getTextBounds("KirbY v1.0", 0, 0, &x1, &y1, &w, &h);
-  display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + 20);  // LOADING alá
-  display.println("KirbY v1.0");
+  display.getTextBounds("KirbY v1.01", 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + 20);
+  display.println("KirbY v1.1");
   display.display();
 
   // DS3231 init
@@ -1197,7 +1216,7 @@ deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
 
   if (rtc.lostPower()) {
     Serial.println("RTC lost time, configuring it...");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // beállítja az aktuális build időt
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 
   // Force time set
@@ -1232,20 +1251,27 @@ deepSleepTo   = prefs.getInt("ds_to", 0);   // <- Deep Sleep vége
   }
 
   // Bloom filter
-  File ffo = SPIFFS.open(WIFI_FILE, "r");
-  if (ffo) {
-    while (ffo.available()) {
-      String line = ffo.readStringUntil('\n');
-      line.trim();
-      if (line.length() == 0) continue;
+File ffo = SPIFFS.open(WIFI_FILE, "r");
+if (ffo) {
+  char line[128];
 
-      int idx = line.indexOf(',');
-      String ssid = (idx >= 0) ? line.substring(0, idx) : line;
+  while (ffo.available()) {
+    int l = ffo.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[l] = 0;
+    trim(line);
 
-      bloomAdd_c(ssid.c_str());
-    }
-    ffo.close();
+    if (strlen(line) == 0) continue;
+
+    char* comma = strchr(line, ',');
+    if (comma) *comma = 0;
+    trim(line);
+
+    if (strlen(line) == 0) continue;
+
+    bloomAdd_c(line);
   }
+  ffo.close();
+}
 
   // CREATE EAT.TXT
 
@@ -1337,106 +1363,81 @@ server.on("/setScheduler", []() {
 });
 
 server.on("/", []() {
-  String html = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">";
-  html += "<title>Kirby Dashboard</title>";
-  html += "<link rel=\"icon\" type=\"image/png\" href=\"data:image/png;base64," + getLogoBase64() + "\">";
-  html += "<style>"
-          "body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; margin:0; padding:0; background: linear-gradient(to bottom, #a0e7ff, #ffffff); }"
-          "h1 { color: #ff69b4; margin-top: 20px; }"
-          "h2 { color: #333; margin-bottom: 5px; }"
-          "iframe { width:90%; height:200px; border:2px solid #333; margin:10px auto; display:block; background-color:#fff8ff; }"
-          "img { width:150px; margin:10px auto; display:block; }"
-          "button { font-size:18px; margin:10px; padding:10px 20px; cursor:pointer; border-radius:10px; border:none; }"
-          "</style></head><body>";
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/html", "");
 
-  html += "<h1>Kirby WiFi Dashboard</h1>";
-  html += "<img src=\"data:image/avif;base64," + getLogoBase64() + "\" alt=\"Kirby\">";
-  
-  html += "<p>Active WiFi: " + String(lastActiveWifiCount) + "</p>";
-    html += "<div style=\"text-align:center;margin:10px;\">";
-  html += "<button onclick=\"toggleSettings()\">⚙️ SETTINGS</button>";
-  html += "</div>";
+    const char* htmlStart = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kirby Dashboard</title>)rawliteral";
+server.sendContent("<link rel=\"icon\" type=\"image/png\" href=\"data:image/png;base64," + getLogoBase64() + "\">");
+const char* htmlMid = R"rawliteral(
+<style>
+body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; margin:0; padding:0; background: linear-gradient(to bottom, #a0e7ff, #ffffff); }
+h1 { color: #ff69b4; margin-top: 20px; }
+h2 { color: #333; margin-bottom: 5px; }
+iframe { width:90%; height:200px; border:2px solid #333; margin:10px auto; display:block; background-color:#fff8ff; }
+img { width:150px; margin:10px auto; display:block; }
+button { font-size:18px; margin:10px; padding:10px 20px; cursor:pointer; border-radius:10px; border:none; }
+</style>
+</head>
+<body>
+<h1>Kirby WiFi Dashboard</h1>
+)rawliteral";
 
-  html += "<div id=\"settingsPanel\" style=\"display:none;width:90%;max-width:450px;margin:auto;background:#fff;border-radius:15px;padding:15px;text-align:center;\">";
+    server.sendContent(htmlStart);
+    server.sendContent(htmlMid);
 
-  // Sleep gomb
-  html += "<form action=\"/toggleSleep\"><button style=\"" 
-        + String(isSleeping ? "background-color:#f44336;color:white;" 
-                           : "background-color:#4caf50;color:white;") 
-        + "\">" + String(isSleeping ? "🌙 Screen OFF" : "☀️ Screen ON") + "</button></form>";
+    server.sendContent("<img src=\"data:image/avif;base64," + getLogoBase64() + "\" alt=\"Kirby\">");
+    server.sendContent("<p>Active WiFi: " + String(lastActiveWifiCount) + "</p>");
 
-  // Mute gomb
-  html += "<form action=\"/toggleMute\"><button style=\"" 
-        + String(isMuted ? "background-color:#f44336;color:white;" 
-                         : "background-color:#4caf50;color:white;") 
-        + "\">" + String(isMuted ? "🔇 Mute" : "🔊 Unmuted") + "</button></form>";
+    String settings = "<div style=\"text-align:center;margin:10px;\"><button onclick=\"toggleSettings()\">⚙️ SETTINGS</button></div>";
+    settings += "<div id=\"settingsPanel\" style=\"display:none;width:90%;max-width:450px;margin:auto;background:#fff;border-radius:15px;padding:15px;text-align:center;\">";
+    settings += "<form action=\"/toggleSleep\"><button style=\"" + String(isSleeping ? "background-color:#f44336;color:white;" : "background-color:#4caf50;color:white;") + "\">" + String(isSleeping ? "🌙 Screen OFF" : "☀️ Screen ON") + "</button></form>";
+    settings += "<form action=\"/toggleMute\"><button style=\"" + String(isMuted ? "background-color:#f44336;color:white;" : "background-color:#4caf50;color:white;") + "\">" + String(isMuted ? "🔇 Mute" : "🔊 Unmuted") + "</button></form>";
+    settings += "<form action=\"/toggleLed\"><button style=\"" + String(isLedOn ? "background-color:#4caf50;color:white;" : "background-color:#f44336;color:white;") + "\">💡 LED " + String(isLedOn ? "ON" : "OFF") + "</button></form>";
+    settings += "<form action=\"/toggleScan\"><button style=\"" + String(isScanning ? "background-color:#4caf50;color:white;" : "background-color:#f44336;color:white;") + "\">📡 Scan " + String(isScanning ? "ON" : "OFF") + "</button></form>";
+    settings += "<hr><button onclick=\"toggleScheduler()\">⏱️ Scheduler</button>";
+    server.sendContent(settings);
 
-// LED gomb
-    html += "<form action=\"/toggleLed\"><button style=\"" 
-      + String(isLedOn ? "background-color:#4caf50;color:white;"
-                       : "background-color:#f44336;color:white;")
-      + "\">💡 LED " + String(isLedOn ? "ON" : "OFF") + "</button></form>";
+    const char* htmlEnd = R"rawliteral(
+<div id="schedulerPanel" style="display:none;margin-top:10px;">
+<form action="/setScheduler">
+<h3>🌞 Screen scheduler</h3>
+From <input type="number" name="scFrom" min="0" max="23" value="0"> To <input type="number" name="scTo" min="0" max="23" value="23"><br>
+<h3>🔊 Sound scheduler</h3>
+From <input type="number" name="muFrom" min="0" max="23" value="0"> To <input type="number" name="muTo" min="0" max="23" value="23"><br>
+<h3>📡 Scan scheduler</h3>
+From <input type="number" name="saFrom" min="0" max="23" value="0"> To <input type="number" name="saTo" min="0" max="23" value="23"><br>
+<h3>💡 LED scheduler</h3>
+From <input type="number" name="leFrom" min="0" max="23" value="0"> To <input type="number" name="leTo" min="0" max="23" value="23"><br>
+<h3>😴 Deep Sleep scheduler</h3>
+From <input type="number" name="dsFrom" min="0" max="23" value="0"> To <input type="number" name="dsTo" min="0" max="23" value="23"><br>
+<br><button type="submit">💾 Save scheduler</button>
+</form>
+</div></div>
 
-// Scan gomb
-    html += "<form action=\"/toggleScan\"><button style=\"" 
-      + String(isScanning ? "background-color:#4caf50;color:white;" 
-                          : "background-color:#f44336;color:white;")
-      + "\">📡 Scan " + String(isScanning ? "ON" : "OFF") + "</button></form>";
+<script>
+function toggleSettings(){let s=document.getElementById('settingsPanel');s.style.display=(s.style.display=='none')?'block':'none';}
+function toggleScheduler(){let s=document.getElementById('schedulerPanel');s.style.display=(s.style.display=='none')?'block':'none';}
+</script>
 
-  html += "<hr>";
-  html += "<button onclick=\"toggleScheduler()\">⏱️ Scheduler</button>";
+<h2>Known WiFis</h2><iframe src="/wifi.txt"></iframe>
+<h2>Eaten WiFis</h2><iframe src="/eat.txt"></iframe>
 
-  html += "<div id=\"schedulerPanel\" style=\"display:none;margin-top:10px;\">";
-  html += "<form action=\"/setScheduler\">";
-
-  // Screen scheduler
-  html += "<h3>🌞 Screen scheduler</h3>";
-  html += "From <input type=\"number\" name=\"scFrom\" min=\"0\" max=\"23\" value=\"" + String(scrOffFrom) + "\"> ";
-  html += "To <input type=\"number\" name=\"scTo\" min=\"0\" max=\"23\" value=\"" + String(scrOffTo) + "\"><br>";
-
-  // Mute scheduler
-  html += "<h3>🔊 Sound scheduler</h3>";
-  html += "From <input type=\"number\" name=\"muFrom\" min=\"0\" max=\"23\" value=\"" + String(muteOffFrom) + "\"> ";
-  html += "To <input type=\"number\" name=\"muTo\" min=\"0\" max=\"23\" value=\"" + String(muteOffTo) + "\"><br>";
-
-  // Scan scheduler
-  html += "<h3>📡 Scan scheduler</h3>";
-  html += "From <input type=\"number\" name=\"saFrom\" min=\"0\" max=\"23\" value=\"" + String(scanOffFrom) + "\"> ";
-  html += "To <input type=\"number\" name=\"saTo\" min=\"0\" max=\"23\" value=\"" + String(scanOffTo) + "\"><br>";
-
-  // LED scheduler
-  html += "<h3>💡 LED scheduler</h3>";
-  html += "From <input type=\"number\" name=\"leFrom\" min=\"0\" max=\"23\" value=\"" + String(ledOffFrom) + "\"> ";
-  html += "To <input type=\"number\" name=\"leTo\" min=\"0\" max=\"23\" value=\"" + String(ledOffTo) + "\"><br>";
-
-  // Deep Sleep scheduler
-  html += "<h3>😴 Deep Sleep scheduler</h3>";
-  html += "From <input type=\"number\" name=\"dsFrom\" min=\"0\" max=\"23\" value=\"" + String(deepSleepFrom) + "\"> ";
-  html += "To <input type=\"number\" name=\"dsTo\" min=\"0\" max=\"23\" value=\"" + String(deepSleepTo) + "\"><br>";
-
-  html += "<br><button type=\"submit\">💾 Save scheduler</button>";
-  html += "</form></div></div>";
-
-  // Script
-  html += "<script>"
-          "function toggleSettings(){"
-          "let s = document.getElementById('settingsPanel');"
-          "s.style.display = (s.style.display == 'none') ? 'block' : 'none';"
-          "}"
-          "function toggleScheduler(){"
-          "let s = document.getElementById('schedulerPanel');"
-          "s.style.display = (s.style.display == 'none') ? 'block' : 'none';"
-          "}"
-          "</script>";
-
-  html += "<h2>Known WiFis</h2><iframe src=\"/wifi.txt\"></iframe>";
-  html += "<h2>Eaten WiFis</h2><iframe src=\"/eat.txt\"></iframe>";
-
-  html += "<h1>Created by Pucur with ❤️</h1>";
-  html += "</body></html>";
-
-  server.send(200, "text/html", html);
+<h1>Created by Pucur with ❤️ ~~ version 1.1</h1>
+<script>
+let titleText='⢀⣀⠤⠤⠒⠒⠒ Kirby Dashboard ⠒⠒⠒⠤⢤⣀';let pos=0;
+function moveTitle(){document.title=titleText.substring(pos)+titleText.substring(0,pos);pos=(pos+1)%titleText.length;}
+setInterval(moveTitle,150);
+</script>
+</body></html>
+)rawliteral";
+    server.sendContent(htmlEnd);
 });
+
 
   server.begin();
   Serial.println("HTTP server started");
@@ -1453,7 +1454,12 @@ server.on("/", []() {
 
 void loop() {
   server.handleClient();
-
+  char buf[32];
+  uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < 15000) {
+    Serial.printf("LOW HEAP: %u – scan skipped\n", freeHeap);
+    return;
+  }
   unsigned long nowMillis = millis();
 
 // Wifi scanning
@@ -1498,22 +1504,23 @@ if (isScanning) {
 
     if (msgCount > 0) {
       if (millis() - msgTimestamps[0] >= msgDuration) {
+
         // FIFO shift
         for (int i = 1; i < msgCount; i++) {
-          topQueue[i - 1] = topQueue[i];
+          strcpy(topQueue[i - 1], topQueue[i]);
           msgTimestamps[i - 1] = msgTimestamps[i];
         }
-        msgCount--;
-        topQueue[msgCount] = "";
-      }
 
-      if (msgCount > 0) {
-        display.fillRect(0, 0, SCREEN_WIDTH, 10, BLACK);  // sor törlése
-        printBold(display, 0, 0, topQueue[0]);
+        msgCount--;
+
+        if (msgCount > 0) {
+          topQueue[msgCount][0] = '\0';
+        }
       }
+      printBold(display, 0, 0, topQueue[0]);
     } else {
-      display.fillRect(0, 0, SCREEN_WIDTH, 10, BLACK);  // sor törlése
-      printBold(display, 0, 0, "Active WiFis: " + String(lastActiveWifiCount));
+      snprintf(buf, sizeof(buf), "Active WiFis: %d", lastActiveWifiCount);
+      printBold(display, 0, 0, buf);
     }
 
     display.setFont();
@@ -1521,20 +1528,25 @@ if (isScanning) {
     display.drawBitmap(-35, 16, kirbyFrames[currentFrame], SCREEN_WIDTH, 32, WHITE);
 
     // Info bar
-    printBold(display, 50, 16, "Age:   " + String(ageDays) + " d");
-    printBold(display, 50, 26, "Yumy:  " + String(fridge));
-    printBold(display, 50, 36, "Total: " + String(total));
-    printBold(display, 0, 52, nowStr12Dot());
+    snprintf(buf, sizeof(buf), "Age:   %d d", ageDays);
+    printBold(display, 50, 16, buf);
+    snprintf(buf, sizeof(buf), "Yumy:  %d", fridge);
+    printBold(display, 50, 26, buf);
+    snprintf(buf, sizeof(buf), "Total: %d", total);
+    printBold(display, 50, 36, buf);
+    nowStr12Dot(buf, sizeof(buf));
+    printBold(display, 0, 52, buf);
 
     display.display();
     currentFrame = (currentFrame + 1) % numFrames;
-  }
 
-  // NeoPixel fade
-  if (isLedOn) {
-     updateLedFade();
+    // NeoPixel fade
+    if (isLedOn) {
+      updateLedFade();
     } else {
       strip.clear();
       strip.show();
+    }
+  }
 }
-}
+
