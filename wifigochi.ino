@@ -10,7 +10,7 @@ Created by Pucur
 
 https://github.com/Pucur/Wifi-Gochi/
 
-Version: 1.0
+Version: 1.2
 */
 
 #include <Adafruit_SSD1306.h>
@@ -75,6 +75,8 @@ extern const unsigned char* kirbyFrames[];
 extern const int numFrames;
 int currentFrame = 0;
 unsigned long lastFeedTime = 0;
+unsigned long kirbyFeedEnableMillis = 0;
+bool kirbyFeedEnabled = false;
 const unsigned long ThreeHours = 3UL * 60UL * 60UL * 1000UL; // Eat time
 const unsigned long msgDuration = 10000;                      // Notification duration
 unsigned long lastActiveCountUpdate = 0;
@@ -1159,7 +1161,8 @@ void printBold(Adafruit_SSD1306& disp, int x, int y, const char* text) {
 }
 
 void setup() {
-
+  kirbyFeedEnableMillis = millis() + 30000; // 30 sec boot delay
+  kirbyFeedEnabled = false;
 prefs.begin("kirby", false);
 
 isSleeping = prefs.getBool("sleep", false);
@@ -1201,9 +1204,9 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
   display.println("LOADING...");
   display.setTextSize(1);
-  display.getTextBounds("KirbY v1.01", 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("KirbY v1.2", 0, 0, &x1, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + 20);
-  display.println("KirbY v1.1");
+  display.println("KirbY v1.2");
   display.display();
 
   // DS3231 init
@@ -1294,7 +1297,7 @@ if (ffo) {
   WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.softAP("Kirby", "kirbyeatwifi", 6, false, 4); // Kirby wifi SSID name and password to connect
+  WiFi.softAP("Kirby", "hungryshaman", 6, false, 4); // Kirby wifi SSID name and password to connect
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
@@ -1427,7 +1430,7 @@ function toggleScheduler(){let s=document.getElementById('schedulerPanel');s.sty
 <h2>Known WiFis</h2><iframe src="/wifi.txt"></iframe>
 <h2>Eaten WiFis</h2><iframe src="/eat.txt"></iframe>
 
-<h1>Created by Pucur with ❤️ ~~ version 1.1</h1>
+<h1>Created by Pucur with ❤️ ~~ version 1.2</h1>
 <script>
 let titleText='⢀⣀⠤⠤⠒⠒⠒ Kirby Dashboard ⠒⠒⠒⠤⢤⣀';let pos=0;
 function moveTitle(){document.title=titleText.substring(pos)+titleText.substring(0,pos);pos=(pos+1)%titleText.length;}
@@ -1450,6 +1453,8 @@ setInterval(moveTitle,150);
     display.ssd1306_command(SSD1306_DISPLAYON);
     Serial.println("Setup: Screen ON, isSleeping = false");
 }
+
+
 }
 
 void loop() {
@@ -1489,7 +1494,17 @@ if (isScanning) {
   }
 
   // Check kirby feed time
+  
+  if (!kirbyFeedEnabled) {
+  if (millis() >= kirbyFeedEnableMillis) {
+    kirbyFeedEnabled = true;
+    Serial.println("Kirby feeding enabled after boot delay");
+  }
+}
+
+if (kirbyFeedEnabled) {
   checkKirbyEating();
+}
   checkSchedulers();
 
   // Frame updates
@@ -1549,4 +1564,3 @@ if (isScanning) {
     }
   }
 }
-
