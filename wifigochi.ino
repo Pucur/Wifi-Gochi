@@ -15,7 +15,7 @@ Version: 1.2
 
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <WebServer.h>
 #include <RTClib.h>
 #include <Adafruit_NeoPixel.h>
@@ -686,11 +686,11 @@ void updateLedFade() {
 // Webserver file paths
 
 void handleFile(const char* path) {
-  if (!SPIFFS.exists(path)) {
+  if (!LittleFS.exists(path)) {
     server.send(404, "text/plain", "Not found");
     return;
   }
-  File f = SPIFFS.open(path, "r");
+  File f = LittleFS.open(path, "r");
   server.streamFile(f, "text/plain");
   f.close();
 }
@@ -796,8 +796,8 @@ void trim(char* s) {
 // Bloom load
 
 void loadBloomFromFile(const char* path) {
-  if (!SPIFFS.exists(path)) return;
-  File f = SPIFFS.open(path, "r");
+  if (!LittleFS.exists(path)) return;
+  File f = LittleFS.open(path, "r");
   if (!f) return;
 
   char line[128];
@@ -825,7 +825,7 @@ void appendSSIDToFile_c(const char* ssid) {
   trim(buf);
   if (strlen(buf) == 0) return;
 
-  File f = SPIFFS.open(WIFI_FILE, "a");
+  File f = LittleFS.open(WIFI_FILE, "a");
   if (!f) return;
   f.printf("%s\n", buf);
   f.close();
@@ -857,8 +857,8 @@ if (bloomCheck_c(ssidBuf)) {
     bool foundInFile = false;
 
     // WiFi.txt read
-    if (SPIFFS.exists(WIFI_FILE)) {
-      File f = SPIFFS.open(WIFI_FILE, "r");
+    if (LittleFS.exists(WIFI_FILE)) {
+      File f = LittleFS.open(WIFI_FILE, "r");
       if (f) {
         char line[128];
         while (f.available()) {
@@ -880,8 +880,8 @@ if (bloomCheck_c(ssidBuf)) {
     }
 
     // eat.txt read
-    if (!foundInFile && SPIFFS.exists(EAT_FILE)) {
-      File f = SPIFFS.open(EAT_FILE, "r");
+    if (!foundInFile && LittleFS.exists(EAT_FILE)) {
+      File f = LittleFS.open(EAT_FILE, "r");
       if (f) {
         char line[128];
         while (f.available()) {
@@ -958,9 +958,9 @@ void checkKirbyEating() {
 
 void feedKirby() {
 
-  if (!SPIFFS.exists(WIFI_FILE)) return;
+  if (!LittleFS.exists(WIFI_FILE)) return;
 
-  File f = SPIFFS.open(WIFI_FILE, "r");
+  File f = LittleFS.open(WIFI_FILE, "r");
   if (!f) return;
 
   char firstLine[128] = {0};
@@ -979,7 +979,7 @@ void feedKirby() {
   if (!hasLine) return;
 
   // --- Append to eat.txt ---
-  File e = SPIFFS.open(EAT_FILE, "a");
+  File e = LittleFS.open(EAT_FILE, "a");
   if (e) {
     e.println(firstLine);
     e.close();
@@ -988,8 +988,8 @@ void feedKirby() {
   }
 
   // --- Rewrite wifi.txt without the eaten line ---
-  File in  = SPIFFS.open(WIFI_FILE, "r");
-  File out = SPIFFS.open("/tmp.txt", "w");
+  File in  = LittleFS.open(WIFI_FILE, "r");
+  File out = LittleFS.open("/tmp.txt", "w");
 
   if (in && out) {
     bool skipped = false;
@@ -1012,16 +1012,16 @@ void feedKirby() {
     in.close();
     out.close();
 
-    SPIFFS.remove(WIFI_FILE);
-    SPIFFS.rename("/tmp.txt", WIFI_FILE);
+    LittleFS.remove(WIFI_FILE);
+    LittleFS.rename("/tmp.txt", WIFI_FILE);
   }
 }
 
 // Counting how many SSIDs in the list
 int countLines(const char* path) {
-  if (!SPIFFS.exists(path)) return 0;
+  if (!LittleFS.exists(path)) return 0;
 
-  File f = SPIFFS.open(path, "r");
+  File f = LittleFS.open(path, "r");
   if (!f) return 0;
 
   int count = 0;
@@ -1236,13 +1236,20 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
                 now.unixtime(), kirbyBirthday.unixtime(), ageDays);
 
 
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS not accessible!");
-    return;
-  }
+// if (!LittleFS.begin()) {
+//    Serial.println("LittleFS not accessible!");
+//    return;
+//}
 
-  if (!SPIFFS.exists(WIFI_FILE)) {
-    File f = SPIFFS.open(WIFI_FILE, "w");  // "w" -> create if not existing
+if (!LittleFS.begin(true)) {  // true = formázás, ha sérült
+    Serial.println("LittleFS nem elérhető, még formázás után sem!");
+    return;
+} else {
+    Serial.println("LittleFS OK (formázás esetleg megtörtént)");
+}
+
+  if (!LittleFS.exists(WIFI_FILE)) {
+    File f = LittleFS.open(WIFI_FILE, "w");
     if (f) {
       Serial.println("wifi.txt created.");
       f.close();
@@ -1254,12 +1261,13 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
   }
 
   // Bloom filter
-File ffo = SPIFFS.open(WIFI_FILE, "r");
+File ffo = LittleFS.open(WIFI_FILE, "r");
 if (ffo) {
   char line[128];
 
   while (ffo.available()) {
     int l = ffo.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (l <= 0) break;
     line[l] = 0;
     trim(line);
 
@@ -1278,8 +1286,8 @@ if (ffo) {
 
   // CREATE EAT.TXT
 
-  if (!SPIFFS.exists(EAT_FILE)) {
-    File f = SPIFFS.open(EAT_FILE, "w");  // "w" -> create if not existing
+  if (!LittleFS.exists(EAT_FILE)) {
+    File f = LittleFS.open(EAT_FILE, "w");
     if (f) {
       Serial.println("eat.txt created.");
       f.close();
@@ -1289,7 +1297,7 @@ if (ffo) {
   } else {
     Serial.println("eat.txt exists.");
   }
-  Serial.println("SPIFFS OK");
+  Serial.println("LittleFS OK");
   fridge = countLines(WIFI_FILE);
   total = countLines(EAT_FILE) + fridge;
 
@@ -1297,7 +1305,7 @@ if (ffo) {
   WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.softAP("Kirby", "hungryshaman", 6, false, 4); // Kirby wifi SSID name and password to connect
+  WiFi.softAP("Kirby", "kirbyeatsitall", 6, false, 4); // Kirby wifi SSID name and password to connect
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
@@ -1534,7 +1542,7 @@ if (kirbyFeedEnabled) {
       }
       printBold(display, 0, 0, topQueue[0]);
     } else {
-      snprintf(buf, sizeof(buf), "Active WiFis: %d", lastActiveWifiCount);
+      snprintf(buf, sizeof(buf), "WiFi:%d | Age:%dd", lastActiveWifiCount, ageDays);
       printBold(display, 0, 0, buf);
     }
 
