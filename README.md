@@ -41,7 +41,7 @@ Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor feat
 - Schedule deep sleep for power saving.  
 
 ### 🌐 Web Interface
-- Full dashboard accessible via browser.  
+- Full dashboard accessible via browser. (Default IP 192.168.4.1)
 - Shows known and eaten WiFis.  
 - Buttons to toggle Sleep, Mute, LED, Scan.  
 - Scheduler settings can be updated directly from the web page.  
