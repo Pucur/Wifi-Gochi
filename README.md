@@ -76,6 +76,8 @@ Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor feat
 - If you want to use the maximum 4 Mb partition for your ESP, copy board.txt under /packages/esp32/hardware/esp32/version/ folder, and the no_ota_bigger.csv file under /packages/esp32/hardware/esp32/version/tools/partitions/ folder
 
   ## Changelog 🔁
+- Version 1.3
+  Changed from SPIFFS storage to LittleFS because I experienced if i terminate the power and power it again it might crash the file system.
 - Version 1.2
   After a long drive I experienced an issue about if the power goes off suddenly, and it cames back, the RTC loads slowly and its show the time as 1970(default), and ate all the WiFi, now it has some delay after powering on Kirby.
 - Version 1.1
