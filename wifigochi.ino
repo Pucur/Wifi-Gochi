@@ -1235,17 +1235,8 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
   Serial.printf("Now: %u, Birthday: %u, Days: %ld\n",
                 now.unixtime(), kirbyBirthday.unixtime(), ageDays);
 
-
-// if (!LittleFS.begin()) {
-//    Serial.println("LittleFS not accessible!");
-//    return;
-//}
-
-if (!LittleFS.begin(true)) {  // true = formázás, ha sérült
-    Serial.println("LittleFS nem elérhető, még formázás után sem!");
-    return;
-} else {
-    Serial.println("LittleFS OK (formázás esetleg megtörtént)");
+if (LittleFS.begin(true)) {
+    Serial.println("LittleFS OK");
 }
 
   if (!LittleFS.exists(WIFI_FILE)) {
@@ -1305,7 +1296,7 @@ if (ffo) {
   WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.softAP("Kirby", "hungryshaman", 6, false, 4); // Kirby wifi SSID name and password to connect
+  WiFi.softAP("Kirby", "kirbyeatsitall", 6, false, 4); // Kirby wifi SSID name and password to connect
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
