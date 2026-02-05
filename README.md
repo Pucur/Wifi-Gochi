@@ -57,7 +57,7 @@ Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor feat
 ## ⚡ Installation
 1. Flash the firmware to your ESP32 using Arduino IDE..
 2. Connect the OLED, NeoPixel, and buzzer according to the pin definitions in the code.  
-3. Place `wifi.txt` and `eat.txt` in SPIFFS or let the firmware create them automatically.  
+3. Place `wifi.txt` and `eat.txt` in LittleFS or let the firmware create them automatically.  
 4. Power up the ESP32. Kirby will animate on the OLED and start scanning WiFis.  
 5. Access the web dashboard via the AP IP to manage settings.  
 
