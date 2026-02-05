@@ -5,7 +5,7 @@
 <img src="assets/web.png" width="1024" height="1024" alt="Kirby Image">
 
 
-Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor featuring a cute Kirby animation, NeoPixel LED effects, buzzer sounds, and OLED display. It tracks available WiFi networks, logs them to SPIFFS, and "feeds" Kirby with the networks it discovers. The device includes scheduling features, notifications, and a web interface to manage settings and monitor Kirby’s activity.
+Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor featuring a cute Kirby animation, NeoPixel LED effects, buzzer sounds, and OLED display. It tracks available WiFi networks, logs them to LittleFS, and "feeds" Kirby with the networks it discovers. The device includes scheduling features, notifications, and a web interface to manage settings and monitor Kirby’s activity.
 
 ## Features
 
@@ -69,7 +69,7 @@ Kirby WiFi Dashboard is an ESP32-based interactive WiFi scanner and monitor feat
 - Scheduler manages screen, sound, scan, LED, and deep sleep times.  
 
 ## 📝 Notes
-- Uses SPIFFS to store `wifi.txt` and `eat.txt`.  
+- Uses LittleFS to store `wifi.txt` and `eat.txt`.  
 - Bloom filter used for efficient duplicate checking of WiFi networks.  
 - Kirby feeding is automatically based on 3-hour intervals from birthday time.  
 - Supports web-based toggles and scheduler settings.
