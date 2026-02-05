@@ -1533,7 +1533,7 @@ if (kirbyFeedEnabled) {
       }
       printBold(display, 0, 0, topQueue[0]);
     } else {
-      snprintf(buf, sizeof(buf), "WiFi:%d | Age:%dd", lastActiveWifiCount, ageDays);
+      snprintf(buf, sizeof(buf), "Active WiFis: %d", lastActiveWifiCount);
       printBold(display, 0, 0, buf);
     }
 
