@@ -1206,7 +1206,7 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
   display.setTextSize(1);
   display.getTextBounds("KirbY v1.3", 0, 0, &x1, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + 20);
-  display.println("KirbY v1.2");
+  display.println("KirbY v1.3");
   display.display();
 
   // DS3231 init
