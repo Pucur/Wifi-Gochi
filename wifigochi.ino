@@ -10,7 +10,7 @@ Created by Pucur
 
 https://github.com/Pucur/Wifi-Gochi/
 
-Version: 1.2
+Version: 1.3
 */
 
 #include <Adafruit_SSD1306.h>
@@ -1204,7 +1204,7 @@ deepSleepTo   = prefs.getInt("ds_to", 0);
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
   display.println("LOADING...");
   display.setTextSize(1);
-  display.getTextBounds("KirbY v1.2", 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("KirbY v1.3", 0, 0, &x1, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + 20);
   display.println("KirbY v1.2");
   display.display();
@@ -1305,7 +1305,7 @@ if (ffo) {
   WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.softAP("Kirby", "kirbyeatsitall", 6, false, 4); // Kirby wifi SSID name and password to connect
+  WiFi.softAP("Kirby", "hungryshaman", 6, false, 4); // Kirby wifi SSID name and password to connect
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
@@ -1438,7 +1438,7 @@ function toggleScheduler(){let s=document.getElementById('schedulerPanel');s.sty
 <h2>Known WiFis</h2><iframe src="/wifi.txt"></iframe>
 <h2>Eaten WiFis</h2><iframe src="/eat.txt"></iframe>
 
-<h1>Created by Pucur with ❤️ ~~ version 1.2</h1>
+<h1>Created by Pucur with ❤️ ~~ version 1.3</h1>
 <script>
 let titleText='⢀⣀⠤⠤⠒⠒⠒ Kirby Dashboard ⠒⠒⠒⠤⢤⣀';let pos=0;
 function moveTitle(){document.title=titleText.substring(pos)+titleText.substring(0,pos);pos=(pos+1)%titleText.length;}
